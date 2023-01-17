@@ -4,22 +4,32 @@ adc.py for F-16 model
 '''
 
 from math import sqrt
+import numpy as np
 
 def adc(vt, alt):
     '''converts velocity (vt) and altitude (alt) to mach number (amach) and dynamic pressure (qbar)
 
     See pages 63-65 of Stevens & Lewis, "Aircraft Control and Simulation", 2nd edition
     '''
+    perturb = True
+    noise = [0,0]
+
+    if perturb:
+        noise[0] = np.random.normal(0,10,1) / 100 # density noise in percent
+        noise[1] = np.random.normal(0,10,1) / 100 # temperature noise in percent
 
     # vt = freestream air speed
 
-    ro = 2.377e-3
-    tfac = 1 - .703e-5 * alt
+    ro = 2.377e-3 + 2.377e-3 * noise[0]  # slugs/f^3
+    tfac = 1 - .703e-5 * alt # from sea level to altitude
 
-    if alt >= 35000: # in stratosphere
+    if alt >= 35000: # in stratosphere constant temperature
         t = 390
-    else:
-        t = 519 * tfac # 3 rankine per atmosphere (3 rankine per 1000 ft)
+    else: # in troposphere
+        t_f_true = 59 # standard sea level temperatue in Fahrenheit (15 C)
+        t_f = t_f_true + t_f_true * noise[1] # add noise to Fahrenheit value
+        t_r = t_f + 459.67 # convert to Rankine
+        t = (t_r) * tfac # 3 rankine per atmosphere (3 rankine per 1000 ft)
 
     # rho = freestream mass density
     rho = ro * tfac**4.14

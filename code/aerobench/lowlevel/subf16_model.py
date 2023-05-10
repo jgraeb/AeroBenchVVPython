@@ -44,6 +44,8 @@ from aerobench.lowlevel.dampp import dampp
 
 from aerobench.lowlevel.morellif16 import Morellif16
 
+from ipdb import set_trace as st
+
 def subf16_model(x, u, model, adjust_cy=True):
     '''output aircraft state vector derivative for a given input
 
@@ -197,5 +199,5 @@ def subf16_model(x, u, model, adjust_cy=True):
     # For extraction of Nz
     Nz = (-az / g) - 1 # zeroed at 1 g, positive g = pulling up
     Ny = ay / g
-
+    # st()
     return xd, Nz, Ny, az, ay

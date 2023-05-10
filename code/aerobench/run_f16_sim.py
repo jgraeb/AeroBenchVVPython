@@ -11,8 +11,10 @@ from aerobench.util import get_state_names, Euler
 from ipdb import set_trace as st
 from aerobench.util import StateIndex
 
+# from examples.data_gcas.mahalanobis import mahalanobis_distance
+
 def run_f16_sim_with_two_flight_computers(initial_state, tmax, ap, cap, step=1/30, extended_states=False, model_str='morelli',
-                integrator_str='rk45', v2_integrators=False):
+                integrator_str='rk45', v2_integrators=False, time_of_corruption=1.0):
     '''Simulates and analyzes autonomous F-16 maneuvers
 
     if multiple aircraft are to be simulated at the same time,
@@ -257,6 +259,7 @@ def run_f16_sim(initial_state, tmax, ap, step=1/30, extended_states=False, model
     modes = [ap.mode]
 
     if extended_states:
+        # st()
         xd, u, Nz, ps, Ny_r = get_extended_states(ap, times[-1], states[-1], model_str, v2_integrators)
 
         xd_list = [xd]
@@ -604,7 +607,7 @@ def get_extended_states(ap, t, full_state, model_str, v2_integrators):
 
     returns tuples if more than one aircraft
     '''
-
+    # st()
     llc = ap.llc
     num_vars = len(get_state_names()) + llc.get_num_integrators()
     num_aircraft = full_state.size // num_vars

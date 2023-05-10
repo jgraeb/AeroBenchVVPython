@@ -30,30 +30,33 @@ def make_str(bit_to_flip):
             the_str = the_str + str(0)
     return the_str
 
-def flip_bit_in_bin(bin_full, bit_to_flip):
+def flip_bit_in_bin(bin_full, bit_to_flip, stuck_bit):
     bin = bin_full[2:]
     the_str = '0b'
     for i in range(32):
         if i == bit_to_flip:
-            if bin[i] == '0':
-                the_str = the_str + str(1)
-            else:
-                the_str = the_str + str(0)
+                if stuck_bit:
+                    the_str = the_str + str(0)
+                else:
+                    if bin[i] == '0':
+                        the_str = the_str + str(1)
+                    else:
+                        the_str = the_str + str(0)
         else:
             the_str = the_str + bin[i]
     return the_str
 
-def flip_bit_in_float(num, bit_to_flip, range): # 32 bit float number and flip bit
+def flip_bit_in_float(num, bit_to_flip, range, stuck_bit): # 32 bit float number and flip bit
     bin_to_flip = float_to_bin(num)
     print(bin_to_flip)
-    flipped_bin = flip_bit_in_bin(bin_to_flip, bit_to_flip)
+    flipped_bin = flip_bit_in_bin(bin_to_flip, bit_to_flip, stuck_bit)
     print(flipped_bin)
     flipped_float = bin_to_float(flipped_bin)
-    # saturate
-    if flipped_float > range[1]:
-        flipped_float = range[1]
-    elif flipped_float < range[0]:
-        flipped_float = range[0]
+    # # saturate
+    # if flipped_float > range[1]:
+    #     flipped_float = range[1]
+    # elif flipped_float < range[0]:
+    #     flipped_float = range[0]
     if np.isnan(flipped_float): # set value to 0.0 if flipped float is NaN
         flipped_float = 0.0
 
@@ -77,7 +80,7 @@ def get_control_signal_error(rv, rv_cor):
     return delta_control
 
 class CorruptedGcasAutopilot(GcasAutopilot):
-    def __init__(self, init_mode='standby', gain_str='old', stdout=False, bit_to_flip=34, flip_probability = 0.1):
+    def __init__(self, init_mode='standby', gain_str='old', stdout=False, bit_to_flip=34, flip_probability = 0.1, stuck_bit=False, time_of_corruption=1.0):
 
         assert init_mode in ['standby', 'roll', 'pull', 'waiting']
         # added for corrupting computation results
@@ -85,6 +88,8 @@ class CorruptedGcasAutopilot(GcasAutopilot):
         self.mask = int(make_str(bit_to_flip), 2) # bit location to flip
         self.control_signal_error_dict = {'ctrl1': [], 'ctrl2': [], 'ctrl3': [], 'ctrl4': []}
         self.flip_probability = flip_probability # % of cases the bit will be flipped
+        self.stuck_bit = stuck_bit
+        self.time_of_corruption = time_of_corruption
 
         # config
         self.cfg_eps_phi = deg2rad(5)       # Max abs roll angle before pull
@@ -107,7 +112,7 @@ class CorruptedGcasAutopilot(GcasAutopilot):
 
         Autopilot.__init__(self, init_mode, llc=llc)
 
-    def get_u_ref(self, _t, x_f16):
+    def get_u_ref(self, t, x_f16):
         '''get the reference input signals'''
 
         if self.mode == 'standby':
@@ -128,11 +133,12 @@ class CorruptedGcasAutopilot(GcasAutopilot):
         #         rv[i] = -1
 
         rv_cor = deepcopy(rv) # corrupt the data
-        if random.random() < self.flip_probability:
-            # for i in range(len(rv)):
-            #     # rv[i] = flip_bit(rv[i],0,6,self.mask, self.bit_to_flip)
-            #     rv_cor[i] = flip_bit_in_float(rv[i], self.bit_to_flip, [-1,6])
-            rv_cor[1] = flip_bit_in_float(rv[1], self.bit_to_flip, [-1,6])
+        if t >= self.time_of_corruption:
+            if random.random() < self.flip_probability:
+                # for i in range(len(rv)):
+                #     # rv[i] = flip_bit(rv[i],0,6,self.mask, self.bit_to_flip)
+                #     rv_cor[i] = flip_bit_in_float(rv[i], self.bit_to_flip, [-1,6])
+                rv_cor[1] = flip_bit_in_float(rv[1], self.bit_to_flip, [-1,6], self.stuck_bit)
         # st()
         delta_control = get_control_signal_error(rv, rv_cor)
         # print('The control error is: {}'.format(delta_control))

@@ -11,10 +11,11 @@ from numpy import deg2rad
 
 from aerobench.lowlevel.subf16_model import subf16_model
 from aerobench.lowlevel.low_level_controller import LowLevelController
+from ipdb import set_trace as st
 
 def controlled_f16(t, x_f16, u_ref, llc, f16_model='morelli', v2_integrators=False):
     'returns the LQR-controlled F-16 state derivatives and more'
-
+    # st()
     assert isinstance(x_f16, np.ndarray)
     assert isinstance(llc, LowLevelController)
     assert u_ref.size == 4
@@ -45,6 +46,7 @@ def controlled_f16(t, x_f16, u_ref, llc, f16_model='morelli', v2_integrators=Fal
     start = len(xd_model)
     end = start + llc.get_num_integrators()
     int_der = llc.get_integrator_derivatives(t, x_f16, u_ref, Nz, ps, Ny_r)
+    # xd[start:end]=np.array([item[0] for item in int_der])
     xd[start:end] = int_der
 
     # Convert all degree values to radians for output

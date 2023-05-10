@@ -15,9 +15,11 @@ from ipdb import set_trace as st
 import numpy as np
 from mpl_toolkits import mplot3d
 
+from mahalanobis import mahalanobis_distance
+
 def set_initial_conditions(perturb = False):
     if perturb: # Gaussian for now - perturb each vector by random number from 1% std distribution
-        mu, sigma = 0, 1 # mean and standard deviation
+        mu, sigma = 0, 3 # mean and standard deviation
         noise = np.random.normal(mu, sigma, 13)/100
     else:
         noise = np.zeros(13)
@@ -72,17 +74,17 @@ def run_corrupted_sim(tmax, bit_to_flip, flip_probability):
 
     return res
 
-def run_2MR_sim(tmax, bit_to_flip, flip_probability):
+def run_2MR_sim(tmax, bit_to_flip, flip_probability, stuck_bit, time_of_corruption):
     print('Running corrupted simulation')
     init = set_initial_conditions(perturb = True)
 
     # Initialize flight computers
     ap = GcasAutopilot(init_mode='roll', stdout=True, gain_str='old')
-    cap = CorruptedGcasAutopilot(init_mode='roll', stdout=True, gain_str='old', bit_to_flip=bit_to_flip, flip_probability=flip_probability)
+    cap = CorruptedGcasAutopilot(init_mode='roll', stdout=True, gain_str='old', bit_to_flip=bit_to_flip, flip_probability=flip_probability, stuck_bit=stuck_bit, time_of_corruption=time_of_corruption)
     # cap = GcasAutopilot(init_mode='roll', stdout=True, gain_str='old')
     # cap = None
     step = 1/30
-    res = run_f16_sim_with_two_flight_computers(init, tmax, ap, cap, step=step, integrator_str = 'rk45', extended_states=True)
+    res = run_f16_sim_with_two_flight_computers(init, tmax, ap, cap, step=step, integrator_str = 'rk45', extended_states=True, time_of_corruption=time_of_corruption)
     # res = run_f16_sim_with_two_flight_computers(init, tmax, ap, cap, step=step, integrator_str = 'rk45', extended_states=True)
     print(f"Simulation Completed in {round(res['runtime'], 3)} seconds")
 
@@ -164,7 +166,7 @@ def plot_traj(run_sim_result, mean_pos, corrupted_results = None):
     plt.tight_layout()
     # plt.show()
 
-    filename = 'trajectories.png'
+    filename = 'trajectories.pdf'
     plt.savefig(filename)
     print(f"Made {filename}")
 
@@ -246,7 +248,7 @@ def plot_control_signal(res, mean_u, std_u):
 
     for i in range(1,4):
         ys = np.array(states_cap)[:,i] # 11: altitude (ft)
-        ax[i-1].plot(times, ys, '-', color = 'blue', label=names[i]+'_corr', linewidth=1)
+        ax[i-1].plot(times, ys, '-', color = 'blue', linewidth=1)
 
     # ax[i].set_ylabel('Control Signal')
     # ax.set_xlabel('Time')
@@ -257,9 +259,9 @@ def plot_control_signal(res, mean_u, std_u):
     # st()
 
     filename = 'control_signal.pdf'
+    # st()
     plt.savefig(filename)
     print(f"Made {filename}")
-
 
 def plot_control_signal_error(res):
     plot.init_plot()
@@ -282,6 +284,170 @@ def plot_control_signal_error(res):
     plt.tight_layout()
 
     filename = 'control_signal_error.png'
+    plt.savefig(filename)
+    print(f"Made {filename}")
+
+def plot_mahalanobis_distance_single_observation(data,obs):
+    # prepare data
+    times = []
+    us = []
+
+    for res in data:
+        time = res['times']
+        u = res['u']
+        times.append(time)
+        us.append(u)
+    mean_u = np.mean(us, axis=0)
+    std_u = np.std(us, axis=0)
+
+    us = np.array(us)
+    times = np.array(times[0]) # time step is the same
+
+    # get control data from observation
+    obs_time = np.array(res['times']) # same as res times
+    obs_u_ap = np.array(obs['u'])
+
+    mal_dist_ap = []
+    for index in np.arange(len(times)):
+        dist_ap = mahalanobis_distance(obs_u_ap[index,:], us[:,index,:])
+        mal_dist_ap.append(dist_ap)
+
+    fig = plt.figure(figsize=(7, 5))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.ticklabel_format(useOffset=False)
+
+    ax.plot(times, mal_dist_ap, '-', color='red', linewidth=1, label='Uncorrupted  AP')
+
+    ax.set_facecolor('whitesmoke')
+
+    ax.set_ylabel('Distance Value')
+    ax.set_xlabel('Time [s]')
+    ax.set_title('Mahalanobis Distance')
+
+    plt.tight_layout()
+    plt.legend()
+    plt.grid(True,linestyle='--')
+
+    filename = 'mahalanobis_uncorrupted_2MR.pdf'
+    plt.savefig(filename)
+    print(f"Made {filename}")
+
+def plot_pdf(data):
+    # prepare data
+    times = []
+    us = []
+
+    for res in data:
+        time = res['times']
+        u = res['u']
+        times.append(time)
+        us.append(u)
+    mean_u = np.mean(us, axis=0)
+    std_u = np.std(us, axis=0)
+
+    us = np.array(us)
+    times = np.array(times[0]) # time step is the same
+
+    mean_dists = []
+    max_dists = []
+    all_dists = []
+    for res in data:
+        # u = res['u']
+        dists = []
+        # st()
+        for index in np.arange(len(times)):
+            dist = mahalanobis_distance(res['u'][index][:], us[:,index,:])
+            dists.append(dist)
+        all_dists.append(dists)
+        # mean_dist = np.mean(dists)
+        # max_dists.append(np.max(dists))
+        # mean_dists.append(mean_dist)
+
+    # st()
+    all_dists_merged = []
+    for entry in all_dists:
+        all_dists_merged = all_dists_merged + entry
+    # st()
+    sorted_dists = np.sort(all_dists_merged)
+
+    nums = []
+    number_of_instances = 0
+    for dist in sorted_dists:
+        number_of_instances = number_of_instances + 1
+        nums.append(number_of_instances/len(all_dists_merged))
+
+
+    fig = plt.figure(figsize=(7, 5))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.ticklabel_format(useOffset=False)
+
+    ax.plot(sorted_dists, nums, '-', color='red', linewidth=1)
+    # ax.plot(sorted_dists, nums, '-', color='red', linewidth=1)
+
+    ax.set_facecolor('whitesmoke')
+
+    ax.set_ylabel('Fraction of Runs')
+    ax.set_xlabel('Mahalanobis Distance')
+    ax.set_title('Distribution')
+
+    plt.tight_layout()
+    plt.legend()
+    plt.grid(True,linestyle='--')
+
+    filename = 'mahal_2MR.pdf'
+    plt.savefig(filename)
+    print(f"Made {filename}")
+
+def plot_mahalanobis_distance(data, obs):
+    # prepare data
+    times = []
+    us = []
+
+    for res in data:
+        time = res['times']
+        u = res['u']
+        times.append(time)
+        us.append(u)
+    mean_u = np.mean(us, axis=0)
+    std_u = np.std(us, axis=0)
+
+    us = np.array(us)
+    times = np.array(times[0]) # time step is the same
+
+    # st()
+    # get control data from observation
+    obs_time = np.array(res['times']) # same as res times
+    obs_u_ap = np.array(obs['u'])
+    obs_u_cap = np.array(obs['u_cap'])
+
+    mal_dist_ap = []
+    mal_dist_cap = []
+    # st()
+    for index in np.arange(len(times)):
+        dist_ap = mahalanobis_distance(obs_u_ap[index,:], us[:,index,:])
+        dist_cap = mahalanobis_distance(obs_u_cap[index,:], us[:,index,:])
+        mal_dist_ap.append(dist_ap)
+        mal_dist_cap.append(dist_cap)
+    # st()
+
+    fig = plt.figure(figsize=(7, 5))
+    ax = fig.add_subplot(1, 1, 1)
+    ax.ticklabel_format(useOffset=False)
+
+    ax.plot(times, mal_dist_ap, '-', color='red', linewidth=1, label='Uncorrupted  AP')
+    ax.plot(times, mal_dist_cap, '-', color='black', linewidth=1, label='Corrupted AP')
+
+    ax.set_facecolor('whitesmoke')
+
+    ax.set_ylabel('Distance Value')
+    ax.set_xlabel('Time [s]')
+    ax.set_title('Mahalanobis Distance')
+
+    plt.tight_layout()
+    plt.legend()
+    plt.grid(True,linestyle='--')
+
+    filename = 'mahal_2MR.pdf'
     plt.savefig(filename)
     print(f"Made {filename}")
 
@@ -328,10 +494,8 @@ def plot_2MR_altitudes(run_sim_result, mean_pos, result):
     plt.savefig(filename)
     print(f"Made {filename}")
 
-
-
 def plot_altitudes(run_sim_result, mean_pos, corrupted_results = None):
-    plot.init_plot()
+    # plot.init_plot()
     fig = plt.figure(figsize=(7, 5))
     ax = fig.add_subplot(1, 1, 1)
     ax.ticklabel_format(useOffset=False)
@@ -355,7 +519,7 @@ def plot_altitudes(run_sim_result, mean_pos, corrupted_results = None):
     ax.set_title('Altitude (ft)')
     plt.tight_layout()
 
-    filename = 'altitudes.png'
+    filename = 'altitudes.pdf'
     plt.savefig(filename)
     print(f"Made {filename}")
 
@@ -366,20 +530,25 @@ def postprocess(results, corrupted_results):
     plot_control_signal_error(corrupted_results)
     plt.show()
 
-def compare_2MR(results, res):
-    mean_pos, std_pos, mean_u, std_u = find_mean_and_variance(results)
+def compare_2MR(nom_results, res):
+    mean_pos, std_pos, mean_u, std_u = find_mean_and_variance(nom_results)
     # st()
     plot_control_signal(res, mean_u, std_u)
-    plot_2MR_altitudes(results, mean_pos, res)
-    plot_2MR_trajectories(results, mean_pos, res)
+    plot_2MR_altitudes(nom_results, mean_pos, res)
+    plot_2MR_trajectories(nom_results, mean_pos, res)
+
+    plot_mahalanobis_distance(nom_results, res)
+
+    # plot_mahalanobis_distance_single_observation(nom_results,res)
+    # plot_altitudes(nom_results, mean_pos)
+    # plot_traj(nom_results, mean_pos)
+    # plot_control_signal(res, mean_u, std_u)
+    plot_pdf(nom_results)
 
     # plot_2MR_traj(results, mean_pos, corrupted_results)
     # plot_control_signal_error(res)
     # plot_control_signal(res)
     plt.show()
-
-
-
 
 def main():
     'main function'
@@ -433,13 +602,15 @@ def main():
     print(f"Made {filename}")
 
 if __name__ == '__main__':
-    num_sims = 5
+    num_sims = 50
     tmax = 4
-    bit_to_flip = 0
-    flip_probability = 1
-    results = get_data(num_sims, tmax)
+    bit_to_flip = 2
+    flip_probability = 1.0
+    stuck_bit = True
+    time_of_corruption = 1.0
+    nom_results = get_data(num_sims, tmax)
     # corrupted_results = run_corrupted_sim(tmax, bit_to_flip, flip_probability)
     # st()
-    res = run_2MR_sim(tmax, bit_to_flip, flip_probability)
-    compare_2MR(results, res)
+    res = run_2MR_sim(tmax, bit_to_flip, flip_probability, stuck_bit, time_of_corruption)
+    compare_2MR(nom_results, res)
     # postprocess(results, corrupted_results)
